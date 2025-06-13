@@ -624,48 +624,6 @@ chills_api/
 - **Database Schema**: Added users table with proper relationships
 - **Environment Configuration**: Extended .env configuration
 
-### Version 1.3.0
-
-#### 🆕 Swagger Documentation
-- **📖 Interactive Documentation**: Comprehensive OpenAPI 3.0 documentation
-- **🎯 API Testing Interface**: Swagger UI integration at `/api/docs`
-- **📋 Complete Specification**: Detailed request/response schemas
-- **🛡️ Security Documentation**: Authentication guides and examples
-- **⚡ Real-time Testing**: Direct API testing from browser
-
-### Version 1.2.0
-
-#### 🐛 Bug Fixes
-- Fixed database field inconsistencies (`year` vs `release_year`)
-- Resolved test database connection issues
-- Fixed Jest "open handle" warnings
-- Corrected validation error messages
-- Fixed genre field handling in tests
-
-#### ✨ Improvements
-- Enhanced test suite with 86 passing tests
-- Improved database connection management
-- Better error handling and validation
-- Cleaner test environment setup
-- Updated documentation with troubleshooting guides
-
-#### 🧪 Testing
-- Added comprehensive unit and integration tests
-- Implemented proper test database isolation
-- Fixed test data consistency issues
-- Improved Jest configuration for clean exits
-
-### Version 1.1.0
-- Initial API implementation
-- Basic CRUD operations
-- MySQL database integration
-- Postman collection for testing
-
-### Version 1.0.0
-- Project initialization
-- Basic Express.js setup
-- Database configuration
-
 ## 🔧 Configuration
 
 ### Environment Variables
