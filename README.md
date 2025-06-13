@@ -38,7 +38,7 @@ A comprehensive RESTful API for managing movie data built with Node.js, Express.
 
 Before running this project, make sure you have the following installed:
 
-- **Node.js** (version 14.x or higher)
+- **Node.js** (version 18.x or higher)
 - **npm** (comes with Node.js)
 - **MySQL** (version 5.7 or higher)
 - **Git** (for cloning the repository)
@@ -48,7 +48,7 @@ Before running this project, make sure you have the following installed:
 ### 1. Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/mdafaardiansyah/hsb-fsd_chills_api_backend-a1b.git chills_api
 cd chills_api
 ```
 
