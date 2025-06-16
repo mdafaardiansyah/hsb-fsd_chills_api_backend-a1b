@@ -20,22 +20,24 @@ const db = require('../config/database'); // Import the database query function
  * @returns {Promise<Array>} A promise that resolves with an array of movies.
  */
 async function getAllMovies(options = {}) {
+  // Build the main query without joins first
   let query = `
     SELECT m.movie_id, m.title, m.overview, m.release_year, m.duration_minutes, 
            m.rating, m.director, m.poster_landscape, m.poster_portrait, 
-           m.created_at, m.updated_at,
-           GROUP_CONCAT(g.genre_name) as genres
+           m.created_at, m.updated_at
     FROM movies m
-    LEFT JOIN movie_genres mg ON m.movie_id = mg.movie_id
-    LEFT JOIN genres g ON mg.genre_id = g.genre_id
   `;
   
   const conditions = [];
   const params = [];
   
-  // Filter by genre
+  // Filter by genre using EXISTS subquery to avoid JOIN issues
   if (options.genre) {
-    conditions.push('g.genre_name LIKE ?');
+    conditions.push(`EXISTS (
+      SELECT 1 FROM movie_genres mg 
+      JOIN genres g ON mg.genre_id = g.genre_id 
+      WHERE mg.movie_id = m.movie_id AND g.genre_name LIKE ?
+    )`);
     params.push(`%${options.genre}%`);
   }
   
@@ -48,7 +50,7 @@ async function getAllMovies(options = {}) {
   // Filter by year
   if (options.year) {
     conditions.push('m.release_year = ?');
-    params.push(options.year);
+    params.push(parseInt(options.year));
   }
   
   // Search functionality
@@ -63,9 +65,6 @@ async function getAllMovies(options = {}) {
     query += ' WHERE ' + conditions.join(' AND ');
   }
   
-  // Group by movie to handle multiple genres
-  query += ' GROUP BY m.movie_id';
-  
   // Sorting
   const validSortFields = ['title', 'release_year', 'rating', 'created_at'];
   const sortBy = validSortFields.includes(options.sortBy) ? options.sortBy : 'created_at';
@@ -73,18 +72,64 @@ async function getAllMovies(options = {}) {
   
   query += ` ORDER BY m.${sortBy} ${sortOrder}`;
   
+  console.log('Before pagination - Query:', query);
+  console.log('Before pagination - Parameters:', params);
+  console.log('Options limit:', options.limit, 'Options offset:', options.offset);
+  
   // Pagination
   if (options.limit) {
     query += ' LIMIT ?';
     params.push(parseInt(options.limit));
     
-    if (options.offset) {
+    if (options.offset !== undefined && options.offset !== null) {
       query += ' OFFSET ?';
       params.push(parseInt(options.offset));
     }
+  } else if (options.offset !== undefined && options.offset !== null) {
+    // If offset is provided without limit, set a default limit
+    query += ' LIMIT ? OFFSET ?';
+    params.push(1000); // Default limit of 1000
+    params.push(parseInt(options.offset)); // Add offset parameter
+  }
+  
+  console.log('Final query:', query);
+  console.log('Parameters count:', params.length);
+  console.log('Parameters:', params);
+  
+  // Count placeholders in query
+  const placeholderCount = (query.match(/\?/g) || []).length;
+  console.log('Placeholder count in query:', placeholderCount);
+  
+  if (placeholderCount !== params.length) {
+    console.error('MISMATCH: Placeholders:', placeholderCount, 'Parameters:', params.length);
+    throw new Error(`Parameter count mismatch: ${placeholderCount} placeholders but ${params.length} parameters`);
   }
   
   const rows = await db.query(query, params);
+  
+  // Get genres for each movie in a separate query to avoid JOIN complexity
+  if (rows.length > 0) {
+    const movieIds = rows.map(row => row.movie_id);
+    const genreQuery = `
+      SELECT mg.movie_id, GROUP_CONCAT(g.genre_name) as genres
+      FROM movie_genres mg
+      JOIN genres g ON mg.genre_id = g.genre_id
+      WHERE mg.movie_id IN (${movieIds.map(() => '?').join(',')})
+      GROUP BY mg.movie_id
+    `;
+    
+    const genreRows = await db.query(genreQuery, movieIds);
+    const genreMap = {};
+    genreRows.forEach(row => {
+      genreMap[row.movie_id] = row.genres;
+    });
+    
+    // Add genres to each movie
+    rows.forEach(row => {
+      row.genres = genreMap[row.movie_id] || null;
+    });
+  }
+  
   return rows;
 }
 

@@ -20,7 +20,13 @@ const dbConfig = {
   acquireTimeout: 60000,           // The milliseconds before a timeout occurs during the connection acquisition
   timeout: 60000,                  // The milliseconds before a timeout occurs during the connection
   reconnect: true,                 // Reconnect when connection is lost
-  idleTimeout: 300000              // Close connections after 5 minutes of inactivity
+  idleTimeout: 300000,             // Close connections after 5 minutes of inactivity
+  namedPlaceholders: false,        // Use ? placeholders instead of named placeholders
+  supportBigNumbers: true,         // Support big numbers (BIGINT and DECIMAL columns)
+  bigNumberStrings: false,         // Return big numbers as strings
+  dateStrings: false,              // Force date types (TIMESTAMP, DATETIME, DATE) to be returned as strings
+  debug: false,                    // Debug mode
+  multipleStatements: false        // Allow multiple mysql statements per query
 };
 
 module.exports = dbConfig; // Export the configuration object
