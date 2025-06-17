@@ -54,6 +54,7 @@ CREATE TABLE packages (
 CREATE TABLE movies (
     movie_id INT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
+    slug VARCHAR(255) UNIQUE NOT NULL,
     overview TEXT,
     poster_landscape VARCHAR(255),
     poster_portrait VARCHAR(255),
@@ -68,8 +69,13 @@ CREATE TABLE movies (
     is_top_rated BOOLEAN DEFAULT FALSE,
     view_count INT DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_slug (slug),
+    INDEX idx_title (title),
+    INDEX idx_director (director),
+    INDEX idx_release_year (release_year),
+    INDEX idx_rating (rating)
+);}]}}}
 
 -- Series table
 CREATE TABLE series (

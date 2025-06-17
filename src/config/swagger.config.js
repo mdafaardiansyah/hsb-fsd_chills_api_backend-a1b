@@ -11,17 +11,41 @@ const options = {
     openapi: '3.0.0',
     info: {
       title: 'Chills Movie API',
-      version: '1.2.0',
+      version: '2.0.0',
       description: `
-        A comprehensive RESTful API for managing movie data in the Chills database.
+        A comprehensive RESTful API for managing movie data in the Chills database with Phase 1 Best Practices implemented.
         
-        ## Features
+        ## 🚀 Phase 1 Features (NEW!)
+        - **Movie Slug Generation**: URL-friendly identifiers for SEO optimization
+        - **Smart File Renaming**: Context-aware file naming with metadata
+        - **Enhanced Pagination**: Comprehensive pagination with navigation links
+        - **User-Friendly Error Messages**: Clear, actionable error responses
+        
+        ## 🎯 Core Features
         - Complete CRUD operations for movies
+        - Dual access: ID and slug-based routing
         - Input validation and error handling
-        - Comprehensive logging
+        - Smart file upload with context
+        - Comprehensive logging and performance tracking
         - Test coverage with 86 passing tests
         
-        ## Authentication
+        ## 🔗 Movie Access Methods
+        
+        ### Traditional ID Access:
+        \`GET /api/movies/123\`
+        
+        ### New Slug Access (SEO-friendly):
+        \`GET /api/movies/the-dark-knight\`
+        
+        ### Enhanced Pagination:
+        \`GET /api/movies?page=2&limit=10&genre=action\`
+        
+        ## 📁 Smart File Upload
+        Upload files with context for automatic smart naming:
+        - Movie posters: \`movie_poster_123_the-dark-knight_landscape_20241201_143022.jpg\`
+        - User avatars: \`user_avatar_456_john-doe_20241201_143022.jpg\`
+        
+        ## 🔐 Authentication
         This API uses JWT (JSON Web Token) authentication for protected endpoints.
         
         ### How to authenticate:
@@ -40,26 +64,51 @@ const options = {
         - Some user management endpoints
         
         ### Public Endpoints:
-        - \`GET /movies\` (listing movies with filters)
+        - \`GET /movies\` (listing movies with filters and pagination)
+        - \`GET /movies/:identifier\` (access by ID or slug)
         - \`POST /auth/register\`
         - \`POST /auth/login\`
         - \`GET /auth/verify-email\`
         
-        ## Error Handling
-        The API uses standard HTTP status codes and returns consistent error responses:
-        - 200: Success
-        - 201: Created
-        - 400: Bad Request (validation errors)
-        - 404: Not Found
-        - 500: Internal Server Error
+        ## ❌ Enhanced Error Handling
+        The API provides user-friendly error messages with detailed context:
+        - **Validation errors**: Field-specific validation messages
+        - **Not found errors**: Clear resource identification
+        - **Database errors**: User-friendly database error translation
+        - **File upload errors**: Detailed upload error context
         
-        ## Data Validation
+        ### Error Response Structure:
+        \`\`\`json
+        {
+          "success": false,
+          "message": "Movie not found with slug: the-dark-knight-2",
+          "error": {
+            "type": "notFound",
+            "details": {
+              "identifier": "the-dark-knight-2",
+              "type": "slug"
+            },
+            "timestamp": "2024-12-01T14:30:22.123Z"
+          }
+        }
+        \`\`\`
+        
+        ## 📄 Enhanced Pagination
+        All list endpoints now include comprehensive pagination metadata:
+        - Navigation links (first, previous, next, last)
+        - User-friendly summary text
+        - Performance metrics
+        - Total items and page information
+        
+        ## 🔧 Data Validation
         All input data is validated before processing:
         - Required fields: title, director, year, genre
         - Optional fields: overview, duration_minutes, rating, cast_list, trailer_url, video_url, poster_landscape, poster_portrait
+        - Auto-generated: slug (from title), timestamps
         - Year must be between 1900 and current year + 10
         - Rating must be between 0 and 10
         - URLs must be valid format
+        - Slugs are automatically generated and validated for uniqueness
       `
     },
     servers: [
@@ -116,6 +165,13 @@ const options = {
               example: 'The Shawshank Redemption',
               minLength: 1,
               maxLength: 255
+            },
+            slug: {
+              type: 'string',
+              description: 'URL-friendly identifier for the movie',
+              example: 'the-shawshank-redemption',
+              pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$',
+              readOnly: true
             },
             overview: {
               type: 'string',
@@ -549,6 +605,270 @@ const options = {
                 'Title is required and must be a non-empty string',
                 'Year must be a valid year between 1900 and 2035'
               ]
+            }
+          }
+        },
+        EnhancedErrorResponse: {
+          type: 'object',
+          properties: {
+            success: {
+              type: 'boolean',
+              example: false
+            },
+            message: {
+              type: 'string',
+              example: 'Movie not found with slug: the-dark-knight-2'
+            },
+            error: {
+              type: 'object',
+              properties: {
+                type: {
+                  type: 'string',
+                  example: 'notFound'
+                },
+                details: {
+                  type: 'object',
+                  example: {
+                    identifier: 'the-dark-knight-2',
+                    type: 'slug'
+                  }
+                },
+                timestamp: {
+                  type: 'string',
+                  format: 'date-time',
+                  example: '2024-12-01T14:30:22.123Z'
+                }
+              }
+            }
+          }
+        },
+        PaginationMeta: {
+          type: 'object',
+          properties: {
+            currentPage: {
+              type: 'integer',
+              example: 2
+            },
+            totalPages: {
+              type: 'integer',
+              example: 10
+            },
+            totalItems: {
+              type: 'integer',
+              example: 95
+            },
+            limit: {
+              type: 'integer',
+              example: 10
+            },
+            hasNextPage: {
+              type: 'boolean',
+              example: true
+            },
+            hasPreviousPage: {
+              type: 'boolean',
+              example: true
+            },
+            startItem: {
+              type: 'integer',
+              example: 11
+            },
+            endItem: {
+              type: 'integer',
+              example: 20
+            },
+            links: {
+              type: 'object',
+              properties: {
+                first: {
+                  type: 'string',
+                  example: '/api/movies?page=1&limit=10'
+                },
+                previous: {
+                  type: 'string',
+                  example: '/api/movies?page=1&limit=10'
+                },
+                next: {
+                  type: 'string',
+                  example: '/api/movies?page=3&limit=10'
+                },
+                last: {
+                  type: 'string',
+                  example: '/api/movies?page=10&limit=10'
+                }
+              }
+            }
+          }
+        },
+        MovieListResponse: {
+          type: 'object',
+          properties: {
+            success: {
+              type: 'boolean',
+              example: true
+            },
+            message: {
+              type: 'string',
+              example: 'Movies retrieved successfully'
+            },
+            data: {
+              type: 'object',
+              properties: {
+                movies: {
+                  type: 'array',
+                  items: {
+                    $ref: '#/components/schemas/Movie'
+                  }
+                },
+                pagination: {
+                  $ref: '#/components/schemas/PaginationMeta'
+                },
+                summary: {
+                  type: 'string',
+                  example: 'Showing 11-20 of 95 movies (page 2 of 10)'
+                },
+                filters: {
+                  type: 'object',
+                  example: {
+                    genre: 'action',
+                    year: null,
+                    director: null
+                  }
+                },
+                sorting: {
+                  type: 'object',
+                  example: {
+                    field: 'title',
+                    order: 'asc'
+                  }
+                },
+                meta: {
+                  type: 'object',
+                  properties: {
+                    totalItems: {
+                      type: 'integer',
+                      example: 95
+                    },
+                    requestedAt: {
+                      type: 'string',
+                      format: 'date-time',
+                      example: '2024-12-01T14:30:22.123Z'
+                    },
+                    processingTime: {
+                      type: 'string',
+                      example: '45ms'
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        MovieResponse: {
+          type: 'object',
+          properties: {
+            success: {
+              type: 'boolean',
+              example: true
+            },
+            message: {
+              type: 'string',
+              example: 'Movie retrieved successfully'
+            },
+            data: {
+              type: 'object',
+              properties: {
+                movie: {
+                  $ref: '#/components/schemas/Movie'
+                },
+                meta: {
+                  type: 'object',
+                  properties: {
+                    accessedBy: {
+                      type: 'string',
+                      example: 'slug'
+                    },
+                    identifier: {
+                      type: 'string',
+                      example: 'the-dark-knight'
+                    },
+                    retrievedAt: {
+                      type: 'string',
+                      format: 'date-time',
+                      example: '2024-12-01T14:30:22.123Z'
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        FileUploadResponse: {
+          type: 'object',
+          properties: {
+            success: {
+              type: 'boolean',
+              example: true
+            },
+            message: {
+              type: 'string',
+              example: 'File uploaded successfully'
+            },
+            data: {
+              type: 'object',
+              properties: {
+                file: {
+                  type: 'object',
+                  properties: {
+                    originalName: {
+                      type: 'string',
+                      example: 'poster.jpg'
+                    },
+                    smartFilename: {
+                      type: 'string',
+                      example: 'movie_poster_123_the-dark-knight_landscape_20241201_143022.jpg'
+                    },
+                    size: {
+                      type: 'integer',
+                      example: 1024576
+                    },
+                    mimetype: {
+                      type: 'string',
+                      example: 'image/jpeg'
+                    },
+                    path: {
+                      type: 'string',
+                      example: '/uploads/movie_poster_123_the-dark-knight_landscape_20241201_143022.jpg'
+                    }
+                  }
+                },
+                context: {
+                  type: 'object',
+                  properties: {
+                    type: {
+                      type: 'string',
+                      example: 'movie_poster'
+                    },
+                    movieId: {
+                      type: 'string',
+                      example: '123'
+                    },
+                    movieTitle: {
+                      type: 'string',
+                      example: 'The Dark Knight'
+                    },
+                    category: {
+                      type: 'string',
+                      example: 'landscape'
+                    }
+                  }
+                },
+                uploadedAt: {
+                  type: 'string',
+                  format: 'date-time',
+                  example: '2024-12-01T14:30:22.123Z'
+                }
+              }
             }
           }
         }

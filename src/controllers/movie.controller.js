@@ -1,6 +1,9 @@
 const movieService = require('../services/movie.service'); // Import the movie service
 const response = require('../utils/response'); // Import response utility
 const validation = require('../utils/validation'); // Import validation utility
+const pagination = require('../utils/pagination');
+const errorMessages = require('../utils/errorMessages');
+const slugGenerator = require('../utils/slugGenerator');
 const logger = require('../utils/logger'); // Import logger utility
 
 /**
@@ -10,148 +13,221 @@ const logger = require('../utils/logger'); // Import logger utility
 
 /**
  * @function handleGetAllMovies
- * @description Handles the request to get all movies with optional filtering, sorting, and searching.
- * @param {import('express').Request} req - The Express request object.
- * @param {import('express').Response} res - The Express response object.
+ * @description Handles the request to get all movies with enhanced pagination and filtering.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
  */
 async function handleGetAllMovies(req, res) {
-  try {
-    // Extract query parameters
-    const {
-      genre,
-      director,
-      year,
-      sortBy,
-      sortOrder,
-      search,
-      limit,
-      offset,
-      page
-    } = req.query;
-    
-    // Build options object
-    const options = {};
-    
-    if (genre) options.genre = genre;
-    if (director) options.director = director;
-    if (year) {
-      const yearNum = parseInt(year);
-      if (!isNaN(yearNum)) options.year = yearNum;
-    }
-    if (sortBy) options.sortBy = sortBy;
-    if (sortOrder) options.sortOrder = sortOrder;
-    if (search) options.search = search;
-    
-    // Handle pagination
-    if (limit) {
-      const limitNum = parseInt(limit);
-      if (!isNaN(limitNum) && limitNum > 0) {
-        options.limit = limitNum;
+    try {
+        // Extract and validate query parameters
+        const {
+            genre,
+            director,
+            year,
+            search,
+            sortBy = 'created_at',
+            sortOrder = 'desc',
+            limit = 10,
+            page = 1
+        } = req.query;
+
+        // Validate pagination parameters
+        const validatedPagination = pagination.validatePaginationParams({
+            page: parseInt(page),
+            limit: parseInt(limit)
+        });
+
+        // Build options object
+        const options = {
+            genre,
+            director,
+            year: year ? parseInt(year) : undefined,
+            search,
+            sortBy,
+            sortOrder,
+            limit: validatedPagination.limit,
+            page: validatedPagination.page,
+            offset: validatedPagination.offset,
+            includePagination: true
+        };
+
+        // Get movies from service with enhanced pagination
+        const result = await movieService.getAllMovies(options);
         
-        // Calculate offset from page or use direct offset
-        if (page) {
-          const pageNum = parseInt(page);
-          if (!isNaN(pageNum) && pageNum > 0) {
-            options.offset = (pageNum - 1) * limitNum;
-          }
-        } else if (offset) {
-          const offsetNum = parseInt(offset);
-          if (!isNaN(offsetNum) && offsetNum >= 0) {
-            options.offset = offsetNum;
-          }
-        }
-      }
+        // Generate pagination links
+        const baseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}${req.path}`;
+        const paginationLinks = pagination.generatePaginationLinks({
+            baseUrl,
+            currentPage: result.pagination.currentPage,
+            totalPages: result.pagination.totalPages,
+            queryParams: req.query
+        });
+        
+        // Format enhanced response
+        const responseData = {
+            movies: result.movies,
+            pagination: {
+                ...result.pagination,
+                links: paginationLinks
+            },
+            summary: result.summary,
+            filters: {
+                genre,
+                director,
+                year,
+                search
+            },
+            sorting: {
+                sortBy,
+                sortOrder
+            },
+            meta: {
+                totalItems: result.totalItems,
+                requestedAt: new Date().toISOString(),
+                processingTime: `${Date.now() - req.startTime}ms`
+            }
+        };
+
+        response.success(res, 'Movies retrieved successfully', responseData);
+        
+    } catch (error) {
+        logger.error('Error in handleGetAllMovies:', error);
+        
+        const errorResponse = errorMessages.createErrorResponse('database', error.message, {
+            operation: 'getAllMovies',
+            query: req.query
+        });
+        
+        response.error(res, errorResponse.message, errorResponse.statusCode, errorResponse.details);
     }
-    
-    logger.info('Fetching movies with options:', options);
-    const movies = await movieService.getAllMovies(options);
-    
-    // Build response with metadata
-    const responseData = {
-      movies,
-      count: movies.length,
-      filters: {
-        genre: options.genre || null,
-        director: options.director || null,
-        year: options.year || null,
-        search: options.search || null
-      },
-      sorting: {
-        sortBy: options.sortBy || 'created_at',
-        sortOrder: options.sortOrder || 'desc'
-      },
-      pagination: {
-        limit: options.limit || null,
-        offset: options.offset || null,
-        page: page ? parseInt(page) : null
-      }
-    };
-    
-    logger.success(`Retrieved ${movies.length} movies`);
-    return response.success(res, responseData, 'Movies retrieved successfully');
-  } catch (error) {
-    logger.error('Error in handleGetAllMovies:', error);
-    return response.error(res, 'Failed to retrieve movies', 500);
-  }
 }
 
 /**
  * @function handleGetMovieById
- * @description Handles the request to get a movie by its ID.
- * @param {import('express').Request} req - The Express request object.
- * @param {import('express').Response} res - The Express response object.
+ * @description Handles the request to get a movie by its ID or slug.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
  */
 async function handleGetMovieById(req, res) {
-  try {
-    const idValidation = validation.validateMovieId(req.params.id);
-    if (!idValidation.isValid) {
-      return response.validationError(res, [idValidation.error]);
+    try {
+        const { identifier } = req.params;
+        
+        // Validate identifier (can be ID or slug)
+        if (!identifier || identifier.trim() === '') {
+            const errorResponse = errorMessages.formatValidationErrors([
+                { field: 'identifier', message: 'Movie ID or slug is required' }
+            ]);
+            return response.validationError(res, errorResponse.message, errorResponse.errors);
+        }
+        
+        // Check if it's a valid ID or slug
+        const isNumericId = !isNaN(identifier) && validation.isPositiveInteger(identifier);
+        const isValidSlug = slugGenerator.isValidSlug(identifier);
+        
+        if (!isNumericId && !isValidSlug) {
+            const errorResponse = errorMessages.createErrorResponse('validation', 
+                'Invalid movie identifier. Must be a valid ID or slug.', {
+                    field: 'identifier',
+                    value: identifier,
+                    expectedFormat: 'positive integer or valid slug'
+                }
+            );
+            return response.validationError(res, errorResponse.message, errorResponse.details);
+        }
+        
+        const movie = await movieService.getMovieById(identifier);
+        
+        if (!movie) {
+            const errorResponse = errorMessages.createErrorResponse('notFound', 
+                `Movie not found with ${isNumericId ? 'ID' : 'slug'}: ${identifier}`, {
+                    identifier,
+                    type: isNumericId ? 'ID' : 'slug'
+                }
+            );
+            return response.notFound(res, errorResponse.message);
+        }
+        
+        // Add metadata to response
+        const responseData = {
+            ...movie,
+            meta: {
+                accessedBy: isNumericId ? 'ID' : 'slug',
+                identifier,
+                retrievedAt: new Date().toISOString()
+            }
+        };
+        
+        response.success(res, 'Movie retrieved successfully', responseData);
+        
+    } catch (error) {
+        logger.error('Error in handleGetMovieById:', error);
+        
+        const errorResponse = errorMessages.createErrorResponse('database', error.message, {
+            operation: 'getMovieById',
+            identifier: req.params.identifier
+        });
+        
+        response.error(res, errorResponse.message, errorResponse.statusCode, errorResponse.details);
     }
-
-    logger.info(`Fetching movie with ID: ${idValidation.id}`);
-    const movie = await movieService.getMovieById(idValidation.id);
-    
-    if (movie) {
-      logger.success(`Movie found: ${movie.title}`);
-      return response.success(res, movie, 'Movie retrieved successfully');
-    } else {
-      logger.warn(`Movie not found with ID: ${idValidation.id}`);
-      return response.notFound(res, 'Movie not found');
-    }
-  } catch (error) {
-    logger.error('Error in handleGetMovieById:', error);
-    return response.error(res, 'Failed to retrieve movie', 500);
-  }
 }
 
 /**
  * @function handleCreateMovie
- * @description Handles the request to create a new movie.
- * @param {import('express').Request} req - The Express request object.
- * @param {import('express').Response} res - The Express response object.
+ * @description Handles the request to create a new movie with slug generation.
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
  */
 async function handleCreateMovie(req, res) {
-  try {
-    const movieData = req.body;
-    
-    // Validate movie data
-    const validationResult = validation.validateMovieData(movieData);
-    if (!validationResult.isValid) {
-      return response.validationError(res, validationResult.errors);
+    try {
+        // Validate movie data
+        const validationResult = validation.validateMovieData(req.body);
+        if (!validationResult.isValid) {
+            const errorResponse = errorMessages.formatValidationErrors(
+                validationResult.errors.map(error => ({
+                    field: error.field || 'unknown',
+                    message: error.message || error
+                }))
+            );
+            return response.validationError(res, errorResponse.message, errorResponse.errors);
+        }
+        
+        // Log movie creation attempt
+        logger.info('Creating new movie:', { title: req.body.title });
+        
+        const createdMovie = await movieService.createMovie(req.body);
+        
+        // Add metadata to response
+        const responseData = {
+            ...createdMovie,
+            meta: {
+                slug: createdMovie.slug,
+                createdAt: new Date().toISOString(),
+                operation: 'create'
+            }
+        };
+        
+        logger.success(`Movie created successfully: ${createdMovie.title} (slug: ${createdMovie.slug})`);
+        response.created(res, 'Movie created successfully', responseData);
+        
+    } catch (error) {
+        logger.error('Error in handleCreateMovie:', error);
+        
+        // Handle specific error types
+        if (error.type === 'duplicate') {
+            return response.error(res, error.message, 409, error.details);
+        }
+        
+        if (error.type === 'validation') {
+            return response.validationError(res, error.message, error.details);
+        }
+        
+        const errorResponse = errorMessages.createErrorResponse('database', error.message, {
+            operation: 'createMovie',
+            data: req.body
+        });
+        
+        response.error(res, errorResponse.message, errorResponse.statusCode, errorResponse.details);
     }
-
-    logger.info(`Creating new movie: ${movieData.title}`);
-    const result = await movieService.createMovie(movieData);
-    
-    // Fetch the newly created movie to include in the response
-    const newMovie = await movieService.getMovieById(result.insertId);
-
-    logger.success(`Movie created successfully with ID: ${result.insertId}`);
-    return response.created(res, newMovie, 'Movie created successfully'); // Return the full movie object
-  } catch (error) {
-    logger.error('Error in handleCreateMovie:', error);
-    return response.error(res, 'Failed to create movie', 500);
-  }
 }
 
 /**
@@ -185,7 +261,7 @@ async function handleUpdateMovie(req, res) {
       return res.status(200).json({ message: 'Movie found, but no changes were made or no valid fields provided for update.', affectedRows: 0 });
     }
   } catch (error) {
-    console.error('Error in handleUpdateMovie:', error.message);
+    logger.error('Error in handleUpdateMovie:', error);
     res.status(500).json({ message: 'Failed to update movie.', error: error.message });
   }
 }
@@ -209,7 +285,7 @@ async function handleDeleteMovie(req, res) {
       res.status(404).json({ message: 'Movie not found or already deleted.' }); // Send a 404 Not Found if no rows were affected
     }
   } catch (error) {
-    console.error('Error in handleDeleteMovie:', error.message);
+    logger.error('Error in handleDeleteMovie:', error);
     res.status(500).json({ message: 'Failed to delete movie.', error: error.message });
   }
 }

@@ -18,8 +18,8 @@ const dbConfig = {
   connectionLimit: 10,             // Maximum number of connections to create at once
   queueLimit: 0,                   // Maximum number of connection requests the pool will queue before returning an error (0 means no limit)
   acquireTimeout: 60000,           // The milliseconds before a timeout occurs during the connection acquisition
-  timeout: 60000,                  // The milliseconds before a timeout occurs during the connection
-  reconnect: true,                 // Reconnect when connection is lost
+  // timeout: 60000,               // REMOVED: Invalid option for MySQL2
+  // reconnect: true,              // REMOVED: Invalid option for MySQL2
   idleTimeout: 300000,             // Close connections after 5 minutes of inactivity
   namedPlaceholders: false,        // Use ? placeholders instead of named placeholders
   supportBigNumbers: true,         // Support big numbers (BIGINT and DECIMAL columns)

@@ -1,3 +1,5 @@
+const logger = require('../utils/logger'); // Import logger utility
+
 /**
  * @module errorHandler
  * @description Global error handling middleware for the application
@@ -11,7 +13,7 @@
  * @param {import('express').NextFunction} next - Express next function
  */
 const errorHandler = (err, req, res, next) => {
-  console.error('Error Stack:', err.stack);
+  logger.error('Error Stack:', err.stack);
   
   // Default error
   let error = {

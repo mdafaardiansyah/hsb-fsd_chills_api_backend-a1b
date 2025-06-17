@@ -10,6 +10,7 @@ const authRoutes = require('./src/routes/auth.routes');
 const uploadRoutes = require('./src/routes/upload.routes');
 const { query } = require('./src/config/database'); // Import database query function
 const errorHandler = require('./src/middleware/errorHandler'); // Import error handler middleware
+const timingMiddleware = require('./src/middleware/timing.middleware');
 const logger = require('./src/utils/logger'); // Import logger utility
 
 const app = express(); // Create an Express application instance
@@ -20,6 +21,7 @@ const swaggerSpec = swaggerJsdoc(swaggerConfig);
 
 // Middleware
 app.use(cors());  // Enable CORS for all routes and origins
+app.use(timingMiddleware.addRequestTiming); // Add request timing for performance tracking
 app.use(express.json()); // Parse incoming requests with JSON payloads
 app.use(express.urlencoded({ extended: true })); // Parse incoming requests with URL-encoded payloads
 
@@ -43,18 +45,28 @@ app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
 app.get('/', (req, res) => {
     res.json({
         message: 'Welcome to Chills API',
-        version: '1.2.0',
-        description: 'A comprehensive movie management API',
+        version: '2.0.0',
+        description: 'A comprehensive movie management API with Phase 1 best practices',
         documentation: '/api/docs',
         endpoints: {
             movies: '/api/movies',
+            upload: '/api/upload',
+            auth: '/api/auth',
             documentation: '/api/docs'
         },
-        features: [
+        phase1Features: [
+            'Movie Slug Generation (SEO-friendly URLs)',
+            'Smart File Renaming (context-aware naming)',
+            'Enhanced Pagination (with metadata)',
+            'User-Friendly Error Messages (detailed context)'
+        ],
+        coreFeatures: [
             'CRUD operations for movies',
-            'Input validation',
-            'Error handling',
-            'Comprehensive API documentation',
+            'Dual access (ID and slug)',
+            'File upload with smart naming',
+            'Input validation with detailed errors',
+            'Comprehensive error handling',
+            'API documentation with examples',
             'Test coverage'
         ]
     });

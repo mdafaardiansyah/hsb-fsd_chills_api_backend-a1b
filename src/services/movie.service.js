@@ -1,4 +1,7 @@
 const db = require('../config/database'); // Import the database query function
+const slugGenerator = require('../utils/slugGenerator');
+const pagination = require('../utils/pagination');
+const errorMessages = require('../utils/errorMessages');
 
 /**
  * @module movieService
@@ -7,7 +10,7 @@ const db = require('../config/database'); // Import the database query function
 
 /**
  * @function getAllMovies
- * @description Retrieves all movies from the database with optional filtering, sorting, and searching.
+ * @description Retrieves all movies from the database with enhanced pagination and filtering.
  * @param {Object} options - Query options
  * @param {string} [options.genre] - Filter by genre
  * @param {string} [options.director] - Filter by director
@@ -17,184 +20,297 @@ const db = require('../config/database'); // Import the database query function
  * @param {string} [options.search] - Search term for title, director, or overview
  * @param {number} [options.limit] - Limit number of results
  * @param {number} [options.offset] - Offset for pagination
- * @returns {Promise<Array>} A promise that resolves with an array of movies.
+ * @param {number} [options.page] - Page number for pagination
+ * @param {boolean} [options.includePagination] - Include pagination metadata
+ * @returns {Promise<Object>} A promise that resolves with movies and pagination data.
  */
 async function getAllMovies(options = {}) {
-  // Build the main query without joins first
-  let query = `
-    SELECT m.movie_id, m.title, m.overview, m.release_year, m.duration_minutes, 
-           m.rating, m.director, m.poster_landscape, m.poster_portrait, 
-           m.created_at, m.updated_at
-    FROM movies m
-  `;
-  
-  const conditions = [];
-  const params = [];
-  
-  // Filter by genre using EXISTS subquery to avoid JOIN issues
-  if (options.genre) {
-    conditions.push(`EXISTS (
-      SELECT 1 FROM movie_genres mg 
-      JOIN genres g ON mg.genre_id = g.genre_id 
-      WHERE mg.movie_id = m.movie_id AND g.genre_name LIKE ?
-    )`);
-    params.push(`%${options.genre}%`);
-  }
-  
-  // Filter by director
-  if (options.director) {
-    conditions.push('m.director LIKE ?');
-    params.push(`%${options.director}%`);
-  }
-  
-  // Filter by year
-  if (options.year) {
-    conditions.push('m.release_year = ?');
-    params.push(parseInt(options.year));
-  }
-  
-  // Search functionality
-  if (options.search) {
-    conditions.push('(m.title LIKE ? OR m.director LIKE ? OR m.overview LIKE ?)');
-    const searchTerm = `%${options.search}%`;
-    params.push(searchTerm, searchTerm, searchTerm);
-  }
-  
-  // Add WHERE clause if there are conditions
-  if (conditions.length > 0) {
-    query += ' WHERE ' + conditions.join(' AND ');
-  }
-  
-  // Sorting
-  const validSortFields = ['title', 'release_year', 'rating', 'created_at'];
-  const sortBy = validSortFields.includes(options.sortBy) ? options.sortBy : 'created_at';
-  const sortOrder = options.sortOrder === 'asc' ? 'ASC' : 'DESC';
-  
-  query += ` ORDER BY m.${sortBy} ${sortOrder}`;
-  
-  console.log('Before pagination - Query:', query);
-  console.log('Before pagination - Parameters:', params);
-  console.log('Options limit:', options.limit, 'Options offset:', options.offset);
-  
-  // Pagination
-  if (options.limit) {
-    query += ' LIMIT ?';
-    params.push(parseInt(options.limit));
-    
-    if (options.offset !== undefined && options.offset !== null) {
-      query += ' OFFSET ?';
-      params.push(parseInt(options.offset));
-    }
-  } else if (options.offset !== undefined && options.offset !== null) {
-    // If offset is provided without limit, set a default limit
-    query += ' LIMIT ? OFFSET ?';
-    params.push(1000); // Default limit of 1000
-    params.push(parseInt(options.offset)); // Add offset parameter
-  }
-  
-  console.log('Final query:', query);
-  console.log('Parameters count:', params.length);
-  console.log('Parameters:', params);
-  
-  // Count placeholders in query
-  const placeholderCount = (query.match(/\?/g) || []).length;
-  console.log('Placeholder count in query:', placeholderCount);
-  
-  if (placeholderCount !== params.length) {
-    console.error('MISMATCH: Placeholders:', placeholderCount, 'Parameters:', params.length);
-    throw new Error(`Parameter count mismatch: ${placeholderCount} placeholders but ${params.length} parameters`);
-  }
-  
-  const rows = await db.query(query, params);
-  
-  // Get genres for each movie in a separate query to avoid JOIN complexity
-  if (rows.length > 0) {
-    const movieIds = rows.map(row => row.movie_id);
-    const genreQuery = `
-      SELECT mg.movie_id, GROUP_CONCAT(g.genre_name) as genres
-      FROM movie_genres mg
-      JOIN genres g ON mg.genre_id = g.genre_id
-      WHERE mg.movie_id IN (${movieIds.map(() => '?').join(',')})
-      GROUP BY mg.movie_id
+  try {
+    // Validate pagination parameters
+    const validatedPagination = pagination.validatePaginationParams({
+      page: options.page,
+      limit: options.limit,
+      offset: options.offset
+    });
+
+    // Build the main query
+    let query = `
+        SELECT 
+            movie_id,
+            title,
+            slug,
+            overview,
+            poster_landscape,
+            poster_portrait,
+            release_year,
+            duration_minutes,
+            rating,
+            director,
+            cast_list,
+            trailer_url,
+            video_url,
+            is_trending,
+            is_top_rated,
+            view_count,
+            created_at,
+            updated_at
+        FROM movies
     `;
+
+    // Build count query for pagination
+    let countQuery = 'SELECT COUNT(*) as total FROM movies';
     
-    const genreRows = await db.query(genreQuery, movieIds);
-    const genreMap = {};
-    genreRows.forEach(row => {
-      genreMap[row.movie_id] = row.genres;
-    });
+    const queryParams = [];
+    const conditions = [];
+
+    // Add filtering conditions
+    if (options.genre) {
+        conditions.push(`
+            EXISTS (
+                SELECT 1 FROM movie_genres mg 
+                JOIN genres g ON mg.genre_id = g.genre_id 
+                WHERE mg.movie_id = movies.movie_id 
+                AND g.name = ?
+            )
+        `);
+        queryParams.push(options.genre);
+    }
+
+    if (options.director) {
+        conditions.push('director = ?');
+        queryParams.push(options.director);
+    }
+
+    if (options.year) {
+        conditions.push('release_year = ?');
+        queryParams.push(options.year);
+    }
+
+    // Add search functionality
+    if (options.search) {
+        conditions.push('(title LIKE ? OR director LIKE ? OR overview LIKE ?)');
+        const searchTerm = `%${options.search}%`;
+        queryParams.push(searchTerm, searchTerm, searchTerm);
+    }
+
+    // Add WHERE clause if there are conditions
+    if (conditions.length > 0) {
+        const whereClause = ' WHERE ' + conditions.join(' AND ');
+        query += whereClause;
+        countQuery += whereClause;
+    }
+
+    // Add sorting
+    const validSortFields = ['title', 'release_year', 'rating', 'created_at', 'view_count'];
+    const sortBy = validSortFields.includes(options.sortBy) ? options.sortBy : 'created_at';
+    const sortOrder = options.sortOrder === 'asc' ? 'ASC' : 'DESC';
+    query += ` ORDER BY ${sortBy} ${sortOrder}`;
+
+    // Execute count query for pagination
+    let totalItems = 0;
+    if (options.includePagination !== false) {
+      const countResult = await db.query(countQuery, queryParams);
+      totalItems = countResult[0]?.total || 0;
+    }
+
+    // Add pagination
+    if (validatedPagination.limit) {
+        query += ' LIMIT ?';
+        queryParams.push(validatedPagination.limit);
+        
+        if (validatedPagination.offset) {
+            query += ' OFFSET ?';
+            queryParams.push(validatedPagination.offset);
+        }
+    }
+
+    // Execute the main query
+    const movies = await db.query(query, queryParams);
     
-    // Add genres to each movie
-    rows.forEach(row => {
-      row.genres = genreMap[row.movie_id] || null;
+    // Return enhanced response with pagination
+    if (options.includePagination !== false) {
+      const paginationData = pagination.calculatePaginationMetadata({
+        currentPage: validatedPagination.page,
+        limit: validatedPagination.limit,
+        totalItems
+      });
+      
+      return {
+        movies,
+        pagination: paginationData,
+        totalItems,
+        summary: pagination.generatePaginationSummary(paginationData)
+      };
+    }
+    
+    return { movies };
+    
+  } catch (error) {
+    throw errorMessages.createErrorResponse('database', error.message, {
+      operation: 'getAllMovies',
+      filters: options
     });
   }
-  
-  return rows;
 }
 
 /**
  * @function getMovieById
- * @description Retrieves a single movie by its ID.
- * @param {number} id - The ID of the movie to retrieve.
- * @returns {Promise<Object|null>} A promise that resolves with the movie object, or null if not found.
+ * @description Retrieves a movie by its ID or slug from the database.
+ * @param {number|string} identifier - The ID or slug of the movie to retrieve.
+ * @returns {Promise<Object|null>} A promise that resolves with the movie object or null if not found.
  */
-async function getMovieById(id) {
-  const rows = await db.query('SELECT movie_id, title, overview, release_year, duration_minutes, rating, director, cast_list, trailer_url, video_url, poster_landscape, poster_portrait FROM movies WHERE movie_id = ?', [id]);
-  return rows[0] || null; // Return the first row (the movie) or null if no movie was found
+async function getMovieById(identifier) {
+  try {
+    // Determine if identifier is a slug or ID
+    const isSlug = slugGenerator.isValidSlug(identifier) && isNaN(identifier);
+    
+    const query = `
+        SELECT 
+            movie_id,
+            title,
+            slug,
+            overview,
+            poster_landscape,
+            poster_portrait,
+            release_year,
+            duration_minutes,
+            rating,
+            director,
+            cast_list,
+            trailer_url,
+            video_url,
+            is_trending,
+            is_top_rated,
+            view_count,
+            created_at,
+            updated_at
+        FROM movies 
+        WHERE ${isSlug ? 'slug' : 'movie_id'} = ?
+    `;
+
+    const movies = await db.query(query, [identifier]);
+    
+    if (movies.length === 0) {
+      return null;
+    }
+    
+    // Get genres for the movie
+    const movie = movies[0];
+    const genreQuery = `
+      SELECT g.genre_name
+      FROM movie_genres mg
+      JOIN genres g ON mg.genre_id = g.genre_id
+      WHERE mg.movie_id = ?
+    `;
+    
+    const genres = await db.query(genreQuery, [movie.movie_id]);
+    movie.genres = genres.map(g => g.genre_name);
+    
+    return movie;
+    
+  } catch (error) {
+    throw errorMessages.createErrorResponse('database', error.message, {
+      operation: 'getMovieById',
+      identifier
+    });
+  }
 }
 
 /**
  * @function createMovie
- * @description Adds a new movie to the database.
- * @param {Object} movieData - An object containing the movie details.
- * @param {string} movieData.title - The title of the movie (required).
- * @param {string} [movieData.overview] - The overview of the movie.
- * @param {number} [movieData.release_year] - The release year of the movie.
- * @param {number} [movieData.duration_minutes] - The duration of the movie in minutes.
- * @param {number} [movieData.rating] - The rating of the movie.
- * @param {string} [movieData.director] - The director of the movie.
- * @param {string} [movieData.cast_list] - The cast list of the movie.
- * @param {string} [movieData.trailer_url] - The URL of the movie trailer.
- * @param {string} [movieData.video_url] - The URL of the movie video.
- * @param {string} [movieData.poster_landscape] - The URL of the landscape poster.
- * @param {string} [movieData.poster_portrait] - The URL of the portrait poster.
- * @returns {Promise<Object>} A promise that resolves with an object containing the insertId and affectedRows.
+ * @description Creates a new movie in the database with slug generation.
+ * @param {Object} movieData - The movie data to insert
+ * @returns {Promise<Object>} A promise that resolves with the created movie data.
  */
 async function createMovie(movieData) {
-  let {
-    title, overview = null, year = null, duration_minutes = null, // Changed release_year to year
-    rating = 0.0, director = null, cast_list = null, trailer_url = null,
-    video_url = null, poster_landscape = null, poster_portrait = null
-    // genre = null // Genre removed as it's not a direct column in movies table
-  } = movieData;
+  try {
+    // Basic validation
+    if (!movieData.title) {
+        throw errorMessages.createErrorResponse('validation', 'Title is required', {
+          field: 'title',
+          operation: 'createMovie'
+        });
+    }
 
-  // Use 'year' from input for 'release_year' column
-  const release_year = year;
+    // Generate unique slug
+    const baseSlug = slugGenerator.generateSlug(movieData.title);
+    let finalSlug = baseSlug;
+    let slugCounter = 1;
+    
+    // Check for slug uniqueness
+    while (await checkSlugExists(finalSlug)) {
+      finalSlug = `${baseSlug}-${slugCounter}`;
+      slugCounter++;
+    }
 
-  // Trim whitespace from string fields
-  if (typeof title === 'string') {
-    title = title.trim();
+    const query = `
+        INSERT INTO movies (
+            title, slug, overview, poster_landscape, poster_portrait, 
+            release_year, duration_minutes, rating, director, 
+            cast_list, trailer_url, video_url, is_trending, 
+            is_top_rated, view_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `;
+
+    const params = [
+        movieData.title,
+        finalSlug,
+        movieData.overview || null,
+        movieData.poster_landscape || null,
+        movieData.poster_portrait || null,
+        movieData.release_year || null,
+        movieData.duration_minutes || null,
+        movieData.rating || 0.0,
+        movieData.director || null,
+        movieData.cast_list || null,
+        movieData.trailer_url || null,
+        movieData.video_url || null,
+        movieData.is_trending || false,
+        movieData.is_top_rated || false,
+        movieData.view_count || 0
+    ];
+
+    const result = await db.query(query, params);
+    
+    // Return the created movie with its ID and slug
+    return {
+        movie_id: result.insertId,
+        slug: finalSlug,
+        ...movieData
+    };
+    
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') {
+      throw errorMessages.createErrorResponse('duplicate', 'Movie with this title already exists', {
+        field: 'title',
+        value: movieData.title
+      });
+    }
+    
+    throw errorMessages.createErrorResponse('database', error.message, {
+      operation: 'createMovie',
+      data: movieData
+    });
   }
-  if (typeof director === 'string') {
-    director = director.trim();
-  }
-  // if (typeof genre === 'string') { // Trim genre if it's a string
-  //   genre = genre.trim();
-  // }
-  // Similarly, you might want to trim other string fields like overview, cast_list etc.
+}
 
-  // Basic validation: title is required
-  if (!title) {
-    throw new Error('Movie title is required.');
+/**
+ * @function checkSlugExists
+ * @description Checks if a slug already exists in the database.
+ * @param {string} slug - The slug to check
+ * @returns {Promise<boolean>} True if slug exists, false otherwise
+ */
+async function checkSlugExists(slug) {
+  try {
+    const query = 'SELECT COUNT(*) as count FROM movies WHERE slug = ?';
+    const result = await db.query(query, [slug]);
+    return result[0].count > 0;
+  } catch (error) {
+    throw errorMessages.createErrorResponse('database', error.message, {
+      operation: 'checkSlugExists',
+      slug
+    });
   }
-
-  const result = await db.query(
-    `INSERT INTO movies (title, overview, release_year, duration_minutes, rating, director, cast_list, trailer_url, video_url, poster_landscape, poster_portrait)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, // Genre removed from INSERT statement
-    [title, overview, release_year, duration_minutes, rating, director, cast_list, trailer_url, video_url, poster_landscape, poster_portrait] // Using the mapped release_year
-  );
-  return { insertId: result.insertId, affectedRows: result.affectedRows };
 }
 
 /**
@@ -264,5 +380,6 @@ module.exports = {
   createMovie,
   updateMovieById,
   deleteMovieById,
-  getMoviesWithFilters
+  getMoviesWithFilters,
+  checkSlugExists
 };

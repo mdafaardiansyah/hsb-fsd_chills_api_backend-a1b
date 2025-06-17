@@ -1,5 +1,6 @@
-const mysql = require('mysql2/promise'); // Import the mysql2 library with promise support
+const mysql = require('mysql2/promise');        // Import mysql2 with promise support
 const dbConfig = require('./database.config');   // Import the database configuration
+const logger = require('../utils/logger');       // Import logger utility
 
 /**
  * @module db
@@ -26,7 +27,7 @@ async function query(sql, params) {
     const [results] = await pool.execute(sql, params); // Get a connection from the pool and execute the query
     return results; // Return the results of the query
   } catch (error) {
-    console.error('Database Query Error:', error); // Log the full error object
+    logger.error('Database Query Error:', error); // Log the full error object
     // In a real application, you might want to throw a custom error or handle it differently
     throw error; // Re-throw the original error to preserve stack trace and details
   }

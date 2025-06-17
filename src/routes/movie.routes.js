@@ -13,48 +13,84 @@ const authMiddleware = require('../middleware/auth.middleware'); // Import auth 
  * @swagger
  * /movies:
  *   get:
- *     summary: Get all movies
- *     description: Retrieve a list of all movies in the database
+ *     summary: Get all movies with enhanced pagination
+ *     description: |
+ *       Retrieve a paginated list of movies with comprehensive metadata.
+ *       
+ *       **Phase 1 Features:**
+ *       - Enhanced pagination with navigation links
+ *       - Performance tracking
+ *       - User-friendly summary
+ *       - Filtering and sorting support
+ *       - Movies include slug field for SEO-friendly URLs
  *     tags: [Movies]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: Page number for pagination
+ *         example: 2
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 100
+ *           default: 10
+ *         description: Number of movies per page
+ *         example: 10
+ *       - in: query
+ *         name: genre
+ *         schema:
+ *           type: string
+ *         description: Filter movies by genre
+ *         example: "action"
+ *       - in: query
+ *         name: year
+ *         schema:
+ *           type: integer
+ *         description: Filter movies by release year
+ *         example: 2020
+ *       - in: query
+ *         name: director
+ *         schema:
+ *           type: string
+ *         description: Filter movies by director
+ *         example: "Christopher Nolan"
+ *       - in: query
+ *         name: sortBy
+ *         schema:
+ *           type: string
+ *           enum: [title, year, rating, created_at]
+ *           default: title
+ *         description: Field to sort by
+ *         example: "rating"
+ *       - in: query
+ *         name: sortOrder
+ *         schema:
+ *           type: string
+ *           enum: [asc, desc]
+ *           default: asc
+ *         description: Sort order
+ *         example: "desc"
  *     responses:
  *       200:
- *         description: Successfully retrieved all movies
+ *         description: Successfully retrieved movies with enhanced pagination
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "Movies retrieved successfully"
- *                 data:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/Movie'
- *             example:
- *               success: true
- *               message: "Movies retrieved successfully"
- *               data:
- *                 - movie_id: 1
- *                   title: "The Shawshank Redemption"
- *                   overview: "Two imprisoned men bond over a number of years"
- *                   year: 1994
- *                   duration_minutes: 142
- *                   rating: 9.3
- *                   director: "Frank Darabont"
- *                   genre: "Drama"
- *                   cast_list: "Tim Robbins, Morgan Freeman"
- *                   trailer_url: "https://www.youtube.com/watch?v=6hB3S9bIaco"
- *                   video_url: null
- *                   poster_landscape: "https://images.example.com/shawshank_landscape.jpg"
- *                   poster_portrait: "https://images.example.com/shawshank_portrait.jpg"
- *                   created_at: "2024-01-15T10:30:00Z"
- *                   updated_at: "2024-01-15T10:30:00Z"
+ *               $ref: '#/components/schemas/MovieListResponse'
+ *       400:
+ *         description: Invalid pagination parameters
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnhancedErrorResponse'
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
@@ -64,8 +100,20 @@ router.get('/', authMiddleware.verifyToken, movieController.handleGetAllMovies);
  * @swagger
  * /movies:
  *   post:
- *     summary: Create a new movie
- *     description: Add a new movie to the database
+ *     summary: Create a new movie (Phase 1 Feature)
+ *     description: |
+ *       Add a new movie to the database with automatic slug generation.
+ *       
+ *       **Phase 1 Features:**
+ *       - Automatic slug generation from movie title
+ *       - SEO-friendly URL slugs (lowercase, hyphenated)
+ *       - Enhanced error messages with detailed validation
+ *       - Duplicate title handling with unique slugs
+ *       
+ *       **Slug Generation:**
+ *       - Title "The Dark Knight" → slug "the-dark-knight"
+ *       - Special characters removed, spaces converted to hyphens
+ *       - Automatic uniqueness handling for duplicate titles
  *     tags: [Movies]
  *     security:
  *       - bearerAuth: []
@@ -76,55 +124,81 @@ router.get('/', authMiddleware.verifyToken, movieController.handleGetAllMovies);
  *           schema:
  *             $ref: '#/components/schemas/MovieInput'
  *           example:
- *             title: "The Godfather"
- *             overview: "The aging patriarch of an organized crime dynasty transfers control of his clandestine empire to his reluctant son."
- *             year: 1972
- *             duration_minutes: 175
- *             rating: 9.2
- *             director: "Francis Ford Coppola"
- *             genre: "Crime, Drama"
- *             cast_list: "Marlon Brando, Al Pacino, James Caan"
- *             trailer_url: "https://www.youtube.com/watch?v=sY1S34973zA"
- *             video_url: "https://streaming.example.com/godfather"
- *             poster_landscape: "https://images.example.com/godfather_landscape.jpg"
- *             poster_portrait: "https://images.example.com/godfather_portrait.jpg"
+ *             title: "The Dark Knight"
+ *             overview: "When the menace known as the Joker wreaks havoc and chaos on the people of Gotham, Batman must accept one of the greatest psychological and physical tests of his ability to fight injustice."
+ *             year: 2008
+ *             duration_minutes: 152
+ *             rating: 9.0
+ *             director: "Christopher Nolan"
+ *             genre: "Action, Crime, Drama"
+ *             cast_list: "Christian Bale, Heath Ledger, Aaron Eckhart"
+ *             trailer_url: "https://www.youtube.com/watch?v=EXeTwQWrcwY"
+ *             video_url: "https://streaming.example.com/dark-knight"
+ *             poster_landscape: "https://images.example.com/dark_knight_landscape.jpg"
+ *             poster_portrait: "https://images.example.com/dark_knight_portrait.jpg"
  *     responses:
  *       201:
- *         description: Movie created successfully
+ *         description: Movie created successfully with auto-generated slug
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "Movie created successfully"
- *                 data:
- *                   $ref: '#/components/schemas/Movie'
+ *               $ref: '#/components/schemas/MovieResponse'
  *             example:
  *               success: true
  *               message: "Movie created successfully"
  *               data:
  *                 movie_id: 2
- *                 title: "The Godfather"
- *                 overview: "The aging patriarch of an organized crime dynasty transfers control of his clandestine empire to his reluctant son."
- *                 year: 1972
- *                 duration_minutes: 175
- *                 rating: 9.2
- *                 director: "Francis Ford Coppola"
- *                 genre: "Crime, Drama"
- *                 cast_list: "Marlon Brando, Al Pacino, James Caan"
- *                 trailer_url: "https://www.youtube.com/watch?v=sY1S34973zA"
- *                 video_url: "https://streaming.example.com/godfather"
- *                 poster_landscape: "https://images.example.com/godfather_landscape.jpg"
- *                 poster_portrait: "https://images.example.com/godfather_portrait.jpg"
- *                 created_at: "2024-01-15T11:00:00Z"
- *                 updated_at: "2024-01-15T11:00:00Z"
+ *                 title: "The Dark Knight"
+ *                 slug: "the-dark-knight"
+ *                 overview: "When the menace known as the Joker wreaks havoc and chaos on the people of Gotham, Batman must accept one of the greatest psychological and physical tests of his ability to fight injustice."
+ *                 year: 2008
+ *                 duration_minutes: 152
+ *                 rating: 9.0
+ *                 director: "Christopher Nolan"
+ *                 genre: "Action, Crime, Drama"
+ *                 cast_list: "Christian Bale, Heath Ledger, Aaron Eckhart"
+ *                 trailer_url: "https://www.youtube.com/watch?v=EXeTwQWrcwY"
+ *                 video_url: "https://streaming.example.com/dark-knight"
+ *                 poster_landscape: "https://images.example.com/dark_knight_landscape.jpg"
+ *                 poster_portrait: "https://images.example.com/dark_knight_portrait.jpg"
+ *                 created_at: "2024-12-01T14:30:22.123Z"
+ *                 updated_at: "2024-12-01T14:30:22.123Z"
+ *               meta:
+ *                 slugGenerated: true
+ *                 originalTitle: "The Dark Knight"
+ *                 generatedSlug: "the-dark-knight"
+ *                 createdAt: "2024-12-01T14:30:22.123Z"
  *       400:
- *         $ref: '#/components/responses/ValidationError'
+ *         description: Validation error with enhanced details
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnhancedErrorResponse'
+ *             examples:
+ *               missingTitle:
+ *                 summary: Missing required title field
+ *                 value:
+ *                   success: false
+ *                   message: "Title is required and cannot be empty"
+ *                   error:
+ *                     type: "validation"
+ *                     details:
+ *                       field: "title"
+ *                       value: null
+ *                       requirement: "Title must be a non-empty string"
+ *                     timestamp: "2024-12-01T14:30:22.123Z"
+ *               invalidYear:
+ *                 summary: Invalid year format
+ *                 value:
+ *                   success: false
+ *                   message: "Year must be a valid number between 1888 and current year"
+ *                   error:
+ *                     type: "validation"
+ *                     details:
+ *                       field: "year"
+ *                       value: "invalid"
+ *                       requirement: "Year must be integer between 1888-2024"
+ *                     timestamp: "2024-12-01T14:30:22.123Z"
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
@@ -132,71 +206,103 @@ router.post('/', authMiddleware.verifyToken, movieController.handleCreateMovie);
 
 /**
  * @swagger
- * /movies/{id}:
+ * /movies/{identifier}:
  *   get:
- *     summary: Get a movie by ID
- *     description: Retrieve a specific movie by its unique identifier
+ *     summary: Get a movie by ID or slug (Phase 1 Feature)
+ *     description: |
+ *       Retrieve a single movie using either its numeric ID or URL-friendly slug.
+ *       
+ *       **Phase 1 Features:**
+ *       - Dual access method: ID or slug
+ *       - SEO-friendly URLs with slugs
+ *       - Enhanced metadata in response
+ *       - Automatic slug generation from title
+ *       
+ *       **Examples:**
+ *       - By ID: `/api/movies/123`
+ *       - By slug: `/api/movies/the-dark-knight`
  *     tags: [Movies]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
- *         name: id
+ *         name: identifier
  *         required: true
- *         description: Unique identifier of the movie
  *         schema:
- *           type: integer
- *           minimum: 1
- *         example: 1
+ *           oneOf:
+ *             - type: integer
+ *               description: Movie ID (numeric)
+ *               example: 123
+ *             - type: string
+ *               pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+ *               description: Movie slug (URL-friendly)
+ *               example: "the-dark-knight"
+ *         description: The movie ID (numeric) or slug (URL-friendly string)
+ *         examples:
+ *           byId:
+ *             value: 123
+ *             summary: Access movie by numeric ID
+ *           bySlug:
+ *             value: "the-dark-knight"
+ *             summary: Access movie by SEO-friendly slug
  *     responses:
  *       200:
- *         description: Movie retrieved successfully
+ *         description: Movie retrieved successfully with enhanced metadata
  *         content:
  *           application/json:
  *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: "Movie retrieved successfully"
- *                 data:
- *                   $ref: '#/components/schemas/Movie'
- *             example:
- *               success: true
- *               message: "Movie retrieved successfully"
- *               data:
- *                 movie_id: 1
- *                 title: "The Shawshank Redemption"
- *                 overview: "Two imprisoned men bond over a number of years, finding solace and eventual redemption through acts of common decency."
- *                 year: 1994
- *                 duration_minutes: 142
- *                 rating: 9.3
- *                 director: "Frank Darabont"
- *                 genre: "Drama"
- *                 cast_list: "Tim Robbins, Morgan Freeman, Bob Gunton"
- *                 trailer_url: "https://www.youtube.com/watch?v=6hB3S9bIaco"
- *                 video_url: "https://streaming.example.com/shawshank"
- *                 poster_landscape: "https://images.example.com/shawshank_landscape.jpg"
- *                 poster_portrait: "https://images.example.com/shawshank_portrait.jpg"
- *                 created_at: "2024-01-15T10:30:00Z"
- *                 updated_at: "2024-01-15T10:30:00Z"
+ *               $ref: '#/components/schemas/MovieResponse'
  *       400:
- *         description: Invalid movie ID format
+ *         description: Invalid identifier format
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/ValidationErrorResponse'
- *             example:
- *               success: false
- *               message: "Validation failed"
- *               errors: ["Movie ID must be a positive integer"]
+ *               $ref: '#/components/schemas/EnhancedErrorResponse'
+ *             examples:
+ *               invalidSlug:
+ *                 summary: Invalid slug format
+ *                 value:
+ *                   success: false
+ *                   message: "Invalid slug format. Slug must contain only lowercase letters, numbers, and hyphens."
+ *                   error:
+ *                     type: "validation"
+ *                     details:
+ *                       identifier: "Invalid-Slug!"
+ *                       expectedFormat: "lowercase-with-hyphens"
+ *                     timestamp: "2024-12-01T14:30:22.123Z"
  *       404:
- *         $ref: '#/components/responses/NotFound'
+ *         description: Movie not found
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/EnhancedErrorResponse'
+ *             examples:
+ *               notFoundById:
+ *                 summary: Movie not found by ID
+ *                 value:
+ *                   success: false
+ *                   message: "Movie not found with ID: 999"
+ *                   error:
+ *                     type: "notFound"
+ *                     details:
+ *                       identifier: "999"
+ *                       type: "ID"
+ *                     timestamp: "2024-12-01T14:30:22.123Z"
+ *               notFoundBySlug:
+ *                 summary: Movie not found by slug
+ *                 value:
+ *                   success: false
+ *                   message: "Movie not found with slug: non-existent-movie"
+ *                   error:
+ *                     type: "notFound"
+ *                     details:
+ *                       identifier: "non-existent-movie"
+ *                       type: "slug"
+ *                     timestamp: "2024-12-01T14:30:22.123Z"
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get('/:id', movieController.handleGetMovieById);
+router.get('/:identifier', authMiddleware.verifyToken, movieController.handleGetMovieById);
 
 /**
  * @swagger
@@ -205,6 +311,8 @@ router.get('/:id', movieController.handleGetMovieById);
  *     summary: Update a movie
  *     description: Update an existing movie by its ID. All fields are optional.
  *     tags: [Movies]
+ *     security:
+ *       - bearerAuth: []
  *     parameters:
  *       - in: path
  *         name: id
@@ -286,7 +394,7 @@ router.get('/:id', movieController.handleGetMovieById);
  *                 message: "Failed to update movie."
  *                 error: "Database connection failed"
  */
-router.patch('/:id', movieController.handleUpdateMovie);
+router.patch('/:id', authMiddleware.verifyToken, movieController.handleUpdateMovie);
 
 /**
  * @swagger
